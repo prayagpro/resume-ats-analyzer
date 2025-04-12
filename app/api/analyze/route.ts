@@ -7,6 +7,9 @@ import * as os from 'os';
 
 const execAsync = promisify(exec);
 
+// Maximum file size in bytes (5MB)
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
@@ -15,6 +18,14 @@ export async function POST(request: Request) {
     if (!file) {
       return NextResponse.json(
         { error: 'No file provided' },
+        { status: 400 }
+      );
+    }
+
+    // Check file size
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: `File size exceeds the maximum limit of ${MAX_FILE_SIZE / (1024 * 1024)}MB` },
         { status: 400 }
       );
     }
@@ -47,8 +58,15 @@ export async function POST(request: Request) {
     fs.writeFileSync(filePath, buffer);
 
     try {
-      // Run the Python script using the virtual environment
+      // Get the path to the virtual environment Python
       const venvPython = path.join(process.cwd(), 'venv', 'bin', 'python3');
+      
+      // Check if the virtual environment Python exists
+      if (!fs.existsSync(venvPython)) {
+        throw new Error('Virtual environment Python not found. Please run: python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt');
+      }
+      
+      // Run the Python script using the virtual environment Python
       const { stdout, stderr } = await execAsync(`"${venvPython}" resume_analyzer.py "${filePath}" "${file.type}"`);
       
       if (stderr) {

@@ -2,7 +2,10 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { FiUpload, FiFile, FiCheck, FiAlertCircle } from 'react-icons/fi';
+import { FiUpload, FiFile, FiCheck, FiAlertCircle, FiInfo } from 'react-icons/fi';
+
+// Maximum file size in bytes (5MB)
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
@@ -15,6 +18,14 @@ export default function Home() {
     setError(null);
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
+      
+      // Check file size
+      if (selectedFile.size > MAX_FILE_SIZE) {
+        setError(`File size exceeds the maximum limit of ${MAX_FILE_SIZE / (1024 * 1024)}MB`);
+        setFile(null);
+        return;
+      }
+      
       const fileType = selectedFile.type;
       const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
       
@@ -45,6 +56,14 @@ export default function Home() {
     
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const droppedFile = e.dataTransfer.files[0];
+      
+      // Check file size
+      if (droppedFile.size > MAX_FILE_SIZE) {
+        setError(`File size exceeds the maximum limit of ${MAX_FILE_SIZE / (1024 * 1024)}MB`);
+        setFile(null);
+        return;
+      }
+      
       const fileType = droppedFile.type;
       const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
       
@@ -60,14 +79,11 @@ export default function Home() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) {
-      setError('Please select a file to upload.');
-      return;
-    }
+    if (!file) return;
 
     setLoading(true);
     setError(null);
-    
+
     const formData = new FormData();
     formData.append('resume', file);
 
@@ -83,16 +99,24 @@ export default function Home() {
         throw new Error(data.error || 'Failed to analyze resume');
       }
 
-      localStorage.setItem('resumeAnalysis', JSON.stringify(data.details));
-      localStorage.setItem('resumeFilePath', data.filePath);
+      // Store the analysis result in localStorage
+      localStorage.setItem('resumeAnalysis', JSON.stringify(data));
       
-      router.push(`/results?score=${data.score}`);
+      // Redirect to results page
+      router.push('/results');
     } catch (error) {
-      console.error('Error:', error);
-      setError(error instanceof Error ? error.message : 'Failed to analyze resume. Please try again.');
+      console.error('Error analyzing resume:', error);
+      setError(error instanceof Error ? error.message : 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }
+  };
+
+  // Format file size for display
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' bytes';
+    else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    else return (bytes / 1048576).toFixed(1) + ' MB';
   };
 
   return (
@@ -149,13 +173,34 @@ export default function Home() {
                 <p className="mt-2 text-sm text-gray-400">
                   or drag and drop your file here
                 </p>
+                <div className="mt-4 text-xs text-gray-400 flex items-center justify-center">
+                  <FiInfo className="mr-1" />
+                  <span>Maximum file size: {formatFileSize(MAX_FILE_SIZE)}</span>
+                </div>
+                {file && (
+                  <div className="mt-2 text-xs text-gray-500">
+                    File size: {formatFileSize(file.size)}
+                  </div>
+                )}
               </div>
             </div>
 
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center" role="alert">
-                <FiAlertCircle className="mr-2 flex-shrink-0" />
-                <span className="block sm:inline">{error}</span>
+              <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-center text-red-700">
+                  <FiAlertCircle className="mr-2" />
+                  <p>{error}</p>
+                </div>
+                {error.includes('Virtual environment Python not found') && (
+                  <div className="mt-2 text-sm text-red-600">
+                    <p>Please run the following commands in your terminal:</p>
+                    <pre className="mt-1 p-2 bg-red-100 rounded">
+                      python3 -m venv venv
+                      source venv/bin/activate
+                      pip install -r requirements.txt
+                    </pre>
+                  </div>
+                )}
               </div>
             )}
 

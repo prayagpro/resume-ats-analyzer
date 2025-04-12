@@ -1,105 +1,84 @@
 'use client';
 
-import { useSearchParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { FiArrowLeft, FiDownload, FiShare2, FiCheck } from 'react-icons/fi';
 
-interface ResumeAnalysis {
-  personal_info: {
-    name: string;
-    email: string;
-    phone: string;
-    location: string;
-  };
-  work_experience: Array<{ description: string }>;
-  education: Array<{ description: string }>;
-  skills: string[];
-  keywords: string[];
-  raw_text: string;
+interface ExperienceItem {
+  description: string;
 }
 
-export default function Results() {
-  const searchParams = useSearchParams();
+interface EducationItem {
+  description: string;
+}
+
+interface ResumeAnalysis {
+  score: number;
+  details: {
+    skills: string[];
+    experience: ExperienceItem[];
+    education: EducationItem[];
+    recommendations: string[];
+  };
+  filePath: string;
+}
+
+const defaultAnalysis: ResumeAnalysis = {
+  score: 0,
+  details: {
+    skills: [],
+    experience: [],
+    education: [],
+    recommendations: []
+  },
+  filePath: ''
+};
+
+export default function ResultsPage() {
   const router = useRouter();
-  const score = searchParams.get('score');
-  const scoreNum = score ? parseInt(score) : 0;
-  const [analysis, setAnalysis] = useState<ResumeAnalysis | null>(null);
-  const [filePath, setFilePath] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<ResumeAnalysis>(defaultAnalysis);
   const [loading, setLoading] = useState(true);
-  const [reanalyzing, setReanalyzing] = useState(false);
 
   useEffect(() => {
-    // Get the analysis data and file path from localStorage
     const storedAnalysis = localStorage.getItem('resumeAnalysis');
-    const storedFilePath = localStorage.getItem('resumeFilePath');
-    
     if (storedAnalysis) {
       try {
         const parsedAnalysis = JSON.parse(storedAnalysis);
-        setAnalysis(parsedAnalysis);
+        // Ensure all required fields exist with default values
+        setAnalysis({
+          score: parsedAnalysis.score || 0,
+          details: {
+            skills: parsedAnalysis.details?.skills || [],
+            experience: parsedAnalysis.details?.experience || [],
+            education: parsedAnalysis.details?.education || [],
+            recommendations: parsedAnalysis.details?.recommendations || []
+          },
+          filePath: parsedAnalysis.filePath || ''
+        });
       } catch (error) {
-        console.error('Error parsing analysis data:', error);
+        console.error('Error parsing stored analysis:', error);
+        setAnalysis(defaultAnalysis);
       }
     }
-    
-    if (storedFilePath) {
-      setFilePath(storedFilePath);
-    }
-    
     setLoading(false);
   }, []);
 
-  const handleReanalyze = async () => {
-    if (!filePath) return;
-    
-    setReanalyzing(true);
-    
-    try {
-      // Get the file type from the file path
-      const fileExtension = filePath.split('.').pop()?.toLowerCase();
-      let fileType = 'application/pdf'; // Default to PDF
-      
-      if (fileExtension === 'doc') {
-        fileType = 'application/msword';
-      } else if (fileExtension === 'docx') {
-        fileType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-      }
-      
-      // Run the Python script to analyze the resume
-      const response = await fetch('/api/reanalyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          filePath,
-          fileType,
-        }),
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to reanalyze resume');
-      }
-      
-      // Update the analysis data in localStorage
-      localStorage.setItem('resumeAnalysis', JSON.stringify(data.details));
-      
-      // Navigate to results page with new score
-      router.push(`/results?score=${data.score}`);
-    } catch (error) {
-      console.error('Error reanalyzing resume:', error);
-      alert(error instanceof Error ? error.message : 'Failed to reanalyze resume. Please try again.');
-    } finally {
-      setReanalyzing(false);
-    }
-  };
-
   const getScoreColor = (score: number) => {
-    if (score >= 80) return 'text-green-600';
-    if (score >= 60) return 'text-yellow-600';
-    return 'text-red-600';
+    if (score >= 80) return {
+      text: 'text-blue-600',
+      stroke: '#3B82F6',
+      background: '#EFF6FF'
+    };
+    if (score >= 60) return {
+      text: 'text-orange-500',
+      stroke: '#F97316',
+      background: '#FFF7ED'
+    };
+    return {
+      text: 'text-red-500',
+      stroke: '#EF4444',
+      background: '#FEF2F2'
+    };
   };
 
   const getScoreMessage = (score: number) => {
@@ -133,154 +112,243 @@ export default function Results() {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  if (!analysis || analysis.score === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+        <h1 className="text-2xl font-bold text-gray-900 mb-4">No Analysis Found</h1>
+        <p className="text-gray-600 mb-6">Please upload a resume to get started.</p>
+        <button
+          onClick={() => router.push('/')}
+          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        >
+          <FiArrowLeft className="mr-2" />
+          Back to Upload
+        </button>
+      </div>
+    );
+  }
+
+  const scoreColor = getScoreColor(analysis.score);
+  const scoreMessage = getScoreMessage(analysis.score);
+  const scoreRecommendations = getScoreRecommendations(analysis.score);
+
   return (
-    <main className="min-h-screen bg-gradient-to-b from-blue-50 to-white py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-lg shadow-xl p-6 mb-8">
-          <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-gray-900 mb-4">
-              Your ATS Score
-            </h1>
-            <div className={`text-6xl font-bold ${getScoreColor(scoreNum)} mb-4`}>
-              {scoreNum}%
-            </div>
-            <p className="text-xl text-gray-600">
-              {getScoreMessage(scoreNum)}
-            </p>
-            
-            {filePath && (
-              <div className="mt-4 text-sm text-gray-500">
-                <p>Resume file: {filePath}</p>
-                <button
-                  onClick={handleReanalyze}
-                  disabled={reanalyzing}
-                  className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {reanalyzing ? 'Reanalyzing...' : 'Reanalyze Resume'}
-                </button>
-              </div>
-            )}
-          </div>
+    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
+      <style jsx global>{`
+        @keyframes progress-animation {
+          0% {
+            stroke-dasharray: 0 283;
+          }
+          100% {
+            stroke-dasharray: ${analysis.score * 2.83} 283;
+          }
+        }
+        
+        @keyframes fade-in {
+          0% {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
 
-          <div className="space-y-6">
-            <h2 className="text-2xl font-semibold text-gray-900">
-              Recommendations
-            </h2>
-            <ul className="space-y-4">
-              {getScoreRecommendations(scoreNum).map((recommendation, index) => (
-                <li key={index} className="flex items-start">
-                  <svg className="h-6 w-6 text-green-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  <span>{recommendation}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="mt-8 text-center">
-            <Link
-              href="/"
-              className="inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+        .progress-circle circle {
+          transition: all 0.3s ease;
+        }
+      `}</style>
+      
+      <div className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+        <div className="mb-8 flex items-center justify-between">
+          <button
+            onClick={() => router.push('/')}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            <FiArrowLeft className="mr-2" />
+            Back
+          </button>
+          <div className="flex space-x-4">
+            <button
+              onClick={() => window.print()}
+              className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
-              Check Another Resume
-            </Link>
+              <FiDownload className="mr-2" />
+              Download Report
+            </button>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(window.location.href);
+                alert('Link copied to clipboard!');
+              }}
+              className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              <FiShare2 className="mr-2" />
+              Share
+            </button>
           </div>
         </div>
 
-        {loading ? (
-          <div className="text-center py-8">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-            <p className="mt-2 text-gray-600">Loading detailed analysis...</p>
-          </div>
-        ) : analysis ? (
-          <div className="bg-white rounded-lg shadow-xl p-6">
-            <h2 className="text-2xl font-semibold text-gray-900 mb-6">
-              Detailed Resume Analysis
-            </h2>
-
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Personal Information</h3>
-                <div className="bg-gray-50 p-4 rounded-md">
-                  <p><span className="font-medium">Name:</span> {analysis.personal_info.name || 'Not found'}</p>
-                  <p><span className="font-medium">Email:</span> {analysis.personal_info.email || 'Not found'}</p>
-                  <p><span className="font-medium">Phone:</span> {analysis.personal_info.phone || 'Not found'}</p>
-                  <p><span className="font-medium">Location:</span> {analysis.personal_info.location || 'Not found'}</p>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Work Experience</h3>
-                <div className="bg-gray-50 p-4 rounded-md">
-                  {analysis.work_experience.length > 0 ? (
-                    <ul className="list-disc pl-5 space-y-2">
-                      {analysis.work_experience.map((exp, index) => (
-                        <li key={index}>{exp.description}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p>No work experience found</p>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Education</h3>
-                <div className="bg-gray-50 p-4 rounded-md">
-                  {analysis.education.length > 0 ? (
-                    <ul className="list-disc pl-5 space-y-2">
-                      {analysis.education.map((edu, index) => (
-                        <li key={index}>{edu.description}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p>No education found</p>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Skills</h3>
-                <div className="bg-gray-50 p-4 rounded-md">
-                  {analysis.skills.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {analysis.skills.map((skill, index) => (
-                        <span key={index} className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
-                          {skill}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p>No skills found</p>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Keywords Found</h3>
-                <div className="bg-gray-50 p-4 rounded-md">
-                  {analysis.keywords.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {analysis.keywords.map((keyword, index) => (
-                        <span key={index} className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm">
-                          {keyword}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p>No keywords found</p>
-                  )}
+        <div className="bg-white shadow-xl rounded-lg overflow-hidden mb-8">
+          <div className="px-6 py-8 text-center">
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">
+              Your ATS Score
+            </h1>
+            
+            <div className="flex justify-center mb-6">
+              <div className="relative w-48 h-48">
+                <svg 
+                  className="w-full h-full -rotate-90 transform"
+                  viewBox="0 0 100 100"
+                >
+                  {/* Background circle */}
+                  <circle
+                    className="transition-all duration-300"
+                    cx="50"
+                    cy="50"
+                    r="45"
+                    fill="none"
+                    stroke="#E5E7EB"
+                    strokeWidth="8"
+                  />
+                  
+                  {/* Progress circle */}
+                  <circle
+                    className="transition-all duration-300"
+                    cx="50"
+                    cy="50"
+                    r="45"
+                    fill="none"
+                    stroke={scoreColor.stroke}
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    strokeDasharray={`${analysis.score * 2.83} 283`}
+                    style={{
+                      animation: 'progress-animation 1.5s ease-out forwards',
+                    }}
+                  />
+                </svg>
+                {/* Score text */}
+                <div 
+                  className="absolute inset-0 flex items-center justify-center"
+                  style={{
+                    animation: 'fade-in 0.5s ease-out 0.5s forwards',
+                    opacity: 0
+                  }}
+                >
+                  <span className={`text-4xl font-bold ${scoreColor.text}`}>
+                    {analysis.score}%
+                  </span>
                 </div>
               </div>
             </div>
+            
+            <p 
+              className={`text-2xl ${scoreColor.text} font-semibold mb-6`}
+              style={{
+                animation: 'fade-in 0.5s ease-out 0.7s forwards',
+                opacity: 0
+              }}
+            >
+              {scoreMessage}
+            </p>
+            
+            <div className="bg-blue-50 p-6 rounded-lg">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                Recommendations to Improve Your Score
+              </h2>
+              <ul className="space-y-3 text-left">
+                {scoreRecommendations.map((recommendation, index) => (
+                  <li key={index} className="flex items-start">
+                    <FiCheck className="h-5 w-5 text-green-500 mr-2 mt-0.5" />
+                    <span>{recommendation}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
-        ) : (
-          <div className="text-center py-8 text-red-600">
-            Failed to load analysis data. Please try again.
+        </div>
+
+        <div className="bg-white shadow-xl rounded-lg overflow-hidden">
+          <div className="px-6 py-5 border-b border-gray-200">
+            <h3 className="text-xl font-semibold text-gray-900">Detailed Resume Analysis</h3>
+            <p className="mt-1 text-sm text-gray-500">Comprehensive breakdown of your resume content</p>
           </div>
-        )}
+          <div className="divide-y divide-gray-200">
+            <div className="px-6 py-5">
+              <h4 className="text-lg font-medium text-gray-900 mb-3">Skills</h4>
+              <div className="flex flex-wrap gap-2">
+                {analysis.details.skills.length > 0 ? (
+                  analysis.details.skills.map((skill, index) => (
+                    <span key={index} className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
+                      {skill}
+                    </span>
+                  ))
+                ) : (
+                  <p className="text-gray-500">No skills found</p>
+                )}
+              </div>
+            </div>
+
+            <div className="px-6 py-5">
+              <h4 className="text-lg font-medium text-gray-900 mb-3">Experience</h4>
+              <ul className="space-y-2">
+                {analysis.details.experience.length > 0 ? (
+                  analysis.details.experience.map((exp, index) => (
+                    <li key={index} className="flex items-start">
+                      <span className="h-5 w-5 rounded-full bg-green-100 text-green-800 flex items-center justify-center mr-2 mt-0.5 text-xs">✓</span>
+                      <span>{exp.description}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li className="text-gray-500">No experience found</li>
+                )}
+              </ul>
+            </div>
+
+            <div className="px-6 py-5">
+              <h4 className="text-lg font-medium text-gray-900 mb-3">Education</h4>
+              <ul className="space-y-2">
+                {analysis.details.education.length > 0 ? (
+                  analysis.details.education.map((edu, index) => (
+                    <li key={index} className="flex items-start">
+                      <span className="h-5 w-5 rounded-full bg-green-100 text-green-800 flex items-center justify-center mr-2 mt-0.5 text-xs">✓</span>
+                      <span>{edu.description}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li className="text-gray-500">No education found</li>
+                )}
+              </ul>
+            </div>
+
+            <div className="px-6 py-5">
+              <h4 className="text-lg font-medium text-gray-900 mb-3">AI Recommendations</h4>
+              <ul className="space-y-2">
+                {analysis.details.recommendations.length > 0 ? (
+                  analysis.details.recommendations.map((rec, index) => (
+                    <li key={index} className="flex items-start">
+                      <span className="h-5 w-5 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center mr-2 mt-0.5 text-xs">i</span>
+                      <span>{rec}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li className="text-gray-500">No recommendations available</li>
+                )}
+              </ul>
+            </div>
+          </div>
+        </div>
       </div>
-    </main>
+    </div>
   );
 } 
